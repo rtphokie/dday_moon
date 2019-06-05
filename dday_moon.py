@@ -1,17 +1,21 @@
-#!/usr/bin/env python
-
 import unittest
 from skyfield import api, almanac
-from datetime import timedelta
+from pytz import timezone
 from skyfield.nutationlib import iau2000b
+London = timezone('Europe/London')
 
-e = api.load('de430t.bsp')  # covers 1550 Jan 01 to 2650 Jan 22, was selected for its lunar ephemeris accuracy
-
-# globals
+# JPL's latest de430 (covers 1550 Jan 01 to 2650 Jan 22) was selected for its
+# lunar ephemeris accuracy
+e = api.load('de430t.bsp')
 moon = e['moon']
 earth = e['earth']
+
+sunset_degrees_USNO = -0.8333
+sunset_degrees_simplified = -1.0
+
+# globals
 ts = api.load.timescale()
-normandy = api.Topos('49.3697 N', '0.8711 W')
+normandy = api.Topos('49.25 N', '0.26667 W')
 
 def sunrise_sunset(ephemeris, topos, sunrise_degree_def=-0.8333):
 
@@ -33,10 +37,9 @@ def sunrise_sunset(ephemeris, topos, sunrise_degree_def=-0.8333):
 def get_dday_sunset_sunrise(sunrise_degree_def = -0.8333):
     t0 = ts.utc(1944, 6, 5, 12)  # start looking for sunset at noon Jun 5
     t1 = ts.utc(1944, 6, 6, 12)  # stop looking for sunrise at noon Jun 6
-    t, y = almanac.find_discrete(t0, t1, sunrise_sunset(e, normandy, sunrise_degree_def=sunrise_degree_def))
-    sunset = t[0]
-    sunrise = t[1]
-    return t
+    t, y = almanac.find_discrete(t0, t1, almanac.sunrise_sunset(e, normandy))
+    # t, y = almanac.find_discrete(t0, t1, sunrise_sunset(e, normandy, sunrise_degree_def=sunrise_degree_def))
+    return t[:2]
 
 def get_moon_position(t, location):
     # apparent = location.at(t).observe(moon).apparent()
@@ -49,45 +52,18 @@ def get_moon_position(t, location):
     return alt
 
 def main():
-    ''' using the sun center half a degree below the horizon to define'''
-    sunset, sunrise = get_dday_sunset_sunrise(sunrise_degree_def = (-.4444))
-    print ("Sunset:   %s" % sunset.utc_jpl())
-    alt = get_moon_position(sunset, normandy)
-    print ("Moon alt: %s" % alt.dstr())
-    print ()
-    print ("Sunrise: %s" % sunrise.utc_jpl())
-    alt = get_moon_position(sunrise, normandy)
-    print ("Moon alt: %s" % alt.dstr())
+    ''' Dr Olson appears to be using a simplified version of the USNO definition of sunrise/set
+        with the center of the disk of the Sun 1.1 degrees below the horizon instead of -0.8333
+        to account for the angular diameter of the Sun and atmospheric diffraction '''
+    sunset, sunrise = get_dday_sunset_sunrise(sunrise_degree_def = sunset_degrees_simplified)
 
-class TestDDayMoon(unittest.TestCase):
-    def test_main(self):
-        main()
 
-    def test_sun_by_upperlimb_definition(self):
-        # Did Dr. Olson define sunrise as when the upper limb of the Sun touches the horizon
-        sunset, sunrise = get_dday_sunset_sunrise(sunrise_degree_def = (-0.5))
-        sunset_olson = ts.utc(1944, 6, 5, 20, 1)
-        julian_delta = sunset - sunset_olson
-        delta_seconds = julian_delta * 24 * 60 * 60
-        # within 30 seconds?  (rounding error to nearest minute?)
-        self.assertAlmostEqual(delta_seconds, 30, 0)
+    print ("D-Day Sun and Moon at Normandy (%s)" % normandy)
+    print ("Sunset:    %s" % str(sunset.astimezone(London)))
+    print ("Moon alt:  %s\n" % get_moon_position(sunset, normandy).dstr())
 
-    def test_sun_by_USNO_definition(self):
-        sunset, sunrise = get_dday_sunset_sunrise()
-        sunset_olson = ts.utc(1944, 6, 5, 20, 1)
-        julian_delta = sunset - sunset_olson
-        delta_minutes = julian_delta * 24 * 60
-        self.assertAlmostEqual(delta_minutes, 3, 0)
-
-    def test_moon_at_sunset(self):
-        sunset, sunrise = get_dday_sunset_sunrise()
-        alt = get_moon_position(sunset, normandy)
-        self.assertTrue(alt.signed_dms()[0] > 0.0, 'Expected Moon to be above horizon at sunset')
-
-    def test_moon_at_sunrise(self):
-        sunset, sunrise = get_dday_sunset_sunrise()
-        alt = get_moon_position(sunset, normandy)
-        self.assertTrue(alt.signed_dms()[0] > 0.0, 'Expected Moon to be above horizon at sunset')
+    print ("Sunrise:    %s" % str(sunrise.astimezone(London)))
+    print ("Moon alt: %s" % get_moon_position(sunrise, normandy).dstr())
 
 if __name__ == '__main__':
     main()
